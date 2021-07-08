@@ -48,8 +48,9 @@ bcd.mon.amt %>%
   pivot_wider(names_from = 구분, values_from = 금액) %>% 
   relocate(개인해외, .before = 기업국내) %>% 
   arrange(desc(일자)) %>% head(5) %>% 
-  kable(format = "markdown", 
-        format.args = list(big.mark = ",", scientific = FALSE))
+  mutate(across(where(is.numeric), ~ .x/1e8)) %>% # 원->억원 
+  kable(format = "markdown", caption = "(억원)",
+        format.args = list(digits = 0, big.mark = ",", scientific = F)) 
 
 ```
 
@@ -88,9 +89,9 @@ bcd %>% # outlier decomposition
     일자 == ymd("2021-04-30"), 
     국내 == "해외", 회원 == "개인"
     ) %>% 
-  arrange(desc(금액)) %>% head(3) %>% 
-  kable(format = "markdown", 
-        format.args = list(big.mark = ",", scientific = FALSE))
+  arrange(desc(금액)) %>% head(3) %>% mutate(금액 = 금액/1e8) %>% 
+  kable(format = "markdown", caption = "(억원)",
+        format.args = list(digits=0, big.mark=",", scientific=FALSE))
 
 
 ```
@@ -113,9 +114,9 @@ bcd.mon.amt.stat <-
   bcd.mon.amt.dcp %>% 
   group_by(월) %>% 
   summarise(
-    평균 = mean(금액, na.rm=T)/1e12,
-    최소 = min(금액, na.rm=T)/1e12,
-    최대 = max(금액, na.rm=T)/1e12
+    평균 = mean(금액, na.rm=T),
+    최소 = min(금액, na.rm=T),
+    최대 = max(금액, na.rm=T)
     ); bcd.mon.amt.stat
 
 ```
@@ -127,8 +128,9 @@ bcd.mon.amt.stat <-
 
 bcd.mon.amt.stat %>% 
   arrange(desc(평균)) %>% head(3) %>% 
-  kable(format = "markdown", 
-        format.args = list(big.mark = ",", digits = 2))
+  mutate(across(where(is.numeric), ~.x/1e8)) %>% 
+  kable(format = "markdown", caption = "(억원)",
+        format.args = list(digits=0, big.mark=",", scientific=FALSE))
 
 ```
 
@@ -139,8 +141,9 @@ bcd.mon.amt.stat %>%
 
 bcd.mon.amt.stat %>% 
   arrange(desc(평균)) %>% tail(3) %>% 
-  kable(format = "markdown", caption = "[조원]",
-        format.args = list(big.mark = ",", digits = 2))
+  mutate(across(where(is.numeric), ~.x/1e8)) %>% 
+  kable(format = "markdown", caption = "(억원)",
+        format.args = list(digits=0, big.mark=",", scientific=FALSE))  
 
 ```
 # 카드매출 주요업종
@@ -203,7 +206,9 @@ bcd.psn.dom.ord <-
 
 bcd.psn.dom.ord %>% 
   filter(매출순위 %in% 1:10) %>% 
-  kable(format = "markdown", format.args = list(big.mark = ","))
+  mutate(across(where(is.numeric), ~.x/1e8)) %>% 
+  kable(format = "markdown", caption = "(억원)",
+        format.args = list(digits=0, big.mark=",", scientific=FALSE))
 
 ```
 
@@ -295,8 +300,10 @@ c19.shk.reb.idx <- c19.shk.reb$코드; c19.shk.reb.idx
 ```{r}
 
 c19.shk.reb %>% 
-  kable(format = "markdown", 
-        format.args = list(big.mark=",", digits = 2))
+  mutate(
+    across(where(is.numeric), scales::percent, accuracy = 0.1)
+    ) %>% 
+  kable(format = "markdown", format.args = list(big.mark=","))
 
 ```
 
