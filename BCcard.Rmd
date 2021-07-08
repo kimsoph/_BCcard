@@ -1,0 +1,366 @@
+---
+title: "Credit Card Expenditure : COVID19 effects"
+author: "Dongsoon Kim"
+date: '2021.07.05.'
+# output: pdf_document
+# header-includes:
+#     - \usepackage{kotex}
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float: true
+    number_sections: false
+    theme: readable
+    css: D:/_R/_Fnc/dsKim_fonts.css
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo=FALSE)
+
+source('d:/_R/_Fnc/dsKim_library.R') 
+
+load('bcd.rda'); bcd.00 <- bcd; bcd <- bcd.00 %>% drop_na(업종)
+
+```
+
+# 신용카드 사용금액
+
+```{r, include=FALSE}
+
+bcd.mon.amt <- # credit card expense, monthly amount
+  bcd %>% 
+  group_by(일자, 국내, 회원) %>% 
+  summarise(금액 = sum(금액, na.rm = T)) %>% 
+  unite("구분", c(회원, 국내), sep = "", remove = T) %>% 
+  ungroup(); bcd.mon.amt
+
+```
+
+## 개요
+### <> 주기 : 월간 ('16.01 ~ '21.06)
+### <> 구분 : 개인/기업 - 국내/해외
+
+```{r}
+
+bcd.mon.amt %>% 
+  pivot_wider(names_from = 구분, values_from = 금액) %>% 
+  relocate(개인해외, .before = 기업국내) %>% 
+  arrange(desc(일자)) %>% head(5) %>% 
+  kable(format = "markdown", 
+        format.args = list(big.mark = ",", scientific = FALSE))
+
+```
+
+## 카드대금 시계열
+
+```{r, fig.width=10, fig.height=5}
+
+bcd.mon.amt %>% 
+  ggplot(aes(x = 일자, y = 금액, color = 구분)) + 
+  geom_point() + geom_line() + 
+  facet_wrap(~ 구분, scales = "free_y") + 
+  theme_bw() + theme(legend.position = "None")
+
+```
+
+### <> 개인해외 스파이크 :  2021-04-30
+
+```{r, fig.width=10, fig.height=3}
+
+bcd.mon.amt %>% 
+  filter(구분 == "개인해외") %>% 
+  ggplot(aes(x = 일자, y = 금액)) + geom_point() + geom_line() + 
+  geom_label_repel(
+    aes(label = 일자 %>% as.character()), 
+    data = bcd.mon.amt %>% filter(구분 == "개인해외", 금액 > .1e12)) + 
+  theme_bw()
+
+```
+
+### <> 스파이크 원인 : 1)비금융기관환전, 2)금융상품서비스 
+
+```{r}
+
+bcd %>% # outlier decomposition
+  filter(
+    일자 == ymd("2021-04-30"), 
+    국내 == "해외", 회원 == "개인"
+    ) %>% 
+  arrange(desc(금액)) %>% head(3) %>% 
+  kable(format = "markdown", 
+        format.args = list(big.mark = ",", scientific = FALSE))
+
+
+```
+
+# 월별 카드 사용량
+
+```{r, include=FALSE}
+
+bcd.mon.amt.dcp <- # decompose yearmonth to year and month 
+  bcd.mon.amt %>% 
+  filter(구분 == "개인국내") %>% 
+  mutate(년 = year(일자), 월 = month(일자, label = T)) %>% 
+  select(년, 월, 금액); bcd.mon.amt.dcp
+
+```
+
+```{r, include=FALSE}
+
+bcd.mon.amt.stat <- 
+  bcd.mon.amt.dcp %>% 
+  group_by(월) %>% 
+  summarise(
+    평균 = mean(금액, na.rm=T)/1e12,
+    최소 = min(금액, na.rm=T)/1e12,
+    최대 = max(금액, na.rm=T)/1e12
+    ); bcd.mon.amt.stat
+
+```
+
+## 가장 많이 긁은 달
+### <> 5, 12, 8월 : 가정의달, 크리스마스, 여름휴가 
+
+```{r}
+
+bcd.mon.amt.stat %>% 
+  arrange(desc(평균)) %>% head(3) %>% 
+  kable(format = "markdown", 
+        format.args = list(big.mark = ",", digits = 2))
+
+```
+
+## 가장 적게 긁은 달
+### <> 2, 1, 4월 : 일수부족, 새해결심(?), 공과금(?)
+
+```{r}
+
+bcd.mon.amt.stat %>% 
+  arrange(desc(평균)) %>% tail(3) %>% 
+  kable(format = "markdown", caption = "[조원]",
+        format.args = list(big.mark = ",", digits = 2))
+
+```
+# 카드매출 주요업종
+
+```{r}
+
+bcd.psn.dom <- bcd %>% filter(국내 == "국내", 회원 == "개인")
+bcd.psn.abd <- bcd %>% filter(국내 == "해외", 회원 == "개인")
+bcd.crp.dom <- bcd %>% filter(국내 == "국내", 회원 == "기업")
+bcd.crp.abd <- bcd %>% filter(국내 == "해외", 회원 == "기업")
+
+```
+
+## 과거매출 상위업종
+
+```{r, include=FALSE}
+
+bcd.psn.dom.rnk <- 
+  bcd.psn.dom %>% 
+  mutate(연도 = year(일자)) %>% 
+  select(-회원, -국내) %>% 
+  group_by(연도, 코드, 업종) %>% nest() %>% 
+  mutate(
+    합계 = data %>% map_dbl(~ .x$금액 %>% sum(na.rm = T))
+    ) %>% 
+  ungroup() %>% select(-data, -코드) %>% 
+  group_by(연도) %>% 
+  mutate(순위 = rank(-합계)) %>% 
+  relocate(연도, .before = 업종) %>% ungroup() ; bcd.psn.dom.rnk
+
+```
+
+```{r}
+
+bcd.psn.dom.rnk %>% 
+  filter(순위 <= 5) %>% select(-합계) %>% 
+  pivot_wider(names_from = "연도", values_from = "업종") %>% 
+  arrange(순위) %>% 
+  kable(format = "markdown")
+
+```
+
+## 최근매출 상위업종 
+
+```{r, include=FALSE}
+
+bcd.psn.dom.ord <- 
+  bcd.psn.dom %>% 
+  filter(일자 == ymd("2021.06.30")) %>% 
+  mutate(매출순위 = rank(-금액)) %>% 
+  mutate(매출순위 = factor(매출순위)) %>% 
+  select(매출순위, 코드, 업종, 금액) %>% 
+  arrange(매출순위); bcd.psn.dom.ord
+  
+```
+
+### <> 카드매출 상위업종 ('21.06 기준)
+
+```{r}
+
+bcd.psn.dom.ord %>% 
+  filter(매출순위 %in% 1:10) %>% 
+  kable(format = "markdown", format.args = list(big.mark = ","))
+
+```
+
+### <> 상위업종 매출추이 
+
+```{r, fig.width=10, fig.height=5}
+
+bcd.psn.dom.ord.idx <- 
+  bcd.psn.dom.ord %>% filter(매출순위 %in% 1:10) %>% .$코드
+
+bcd.psn.dom %>% 
+  filter(코드 %in% bcd.psn.dom.ord.idx) %>% 
+  ggplot(aes(x = 일자, y = 금액/1e8, color = 업종)) + 
+  geom_point() + geom_line() + 
+  facet_wrap(~ 업종, scale = "free_y", nrow = 2) +
+  theme_bw() + theme(legend.position = "none")
+  
+```
+
+# 코로나 업종별 영향
+
+## 코로나 기간설정
+
+```{r}
+
+c19.tme.srt <- "2019-12-31" %>% ymd # start c19
+c19.tme.mdl <- "2021-02-28" %>% ymd # middle c19
+c19.tme.now <- "2021-06-30" %>% ymd # nowadays
+
+```
+
+### <> 기준일 : 이전[2019-11-30], 최악[2020-12-31], 현재[2021-06-30]
+
+```{r, fig.width=10, fig.height=3}
+
+bcd.mon.amt %>% 
+  filter(구분 == "개인국내") %>% 
+  ggplot(aes(x = 일자, y = 금액)) + 
+  geom_point() + geom_line() + 
+  geom_vline(
+    xintercept = c(c19.tme.srt, c19.tme.mdl, c19.tme.now),
+    color = "blue") + 
+  theme_bw()
+
+```
+
+```{r, include=FALSE}
+
+c19.bcd.psn.dom <- 
+  bcd.psn.dom %>% 
+  mutate(
+    c19.tme = case_when(
+      일자 == c19.tme.srt ~ "srt",
+      일자 == c19.tme.mdl ~ "mdl",
+      일자 == c19.tme.now ~ "now",
+      TRUE                ~ "neg"
+    )
+  ) %>% 
+  mutate(
+    c19.tme = factor(c19.tme, levels = c("srt", "mdl", "now", "neg"))
+  ) %>% 
+  filter(c19.tme %ni% "neg") %>% 
+  select(c19.tme, 일자, 코드, 업종, 금액) %>% 
+  arrange(코드, c19.tme); c19.bcd.psn.dom
+
+```
+
+## 코로나충격 상위업종 
+
+```{r, include=FALSE}
+
+c19.shk.reb <- # covid19 shock and rebound
+  c19.bcd.psn.dom %>% 
+  group_by(코드, 업종) %>% nest() %>% 
+  mutate(
+    매출감소율 = data %>% map_dbl(~ .x$금액[2]/.x$금액[1] - 1),
+    매출회복율 = data %>% map_dbl(~ .x$금액[3]/.x$금액[1] - 1)
+    ) %>% 
+  select(-data) %>% 
+  arrange(매출회복율) %>% 
+  head(10); c19.shk.reb
+
+c19.shk.reb.idx <- c19.shk.reb$코드; c19.shk.reb.idx
+
+```
+
+### <> 매출감소(이전->최악) 및 매출회복(이전->현재) : 매출회복순위 
+
+```{r}
+
+c19.shk.reb %>% 
+  kable(format = "markdown", 
+        format.args = list(big.mark=",", digits = 2))
+
+```
+
+### <> 충격업종 신용카드매출 추이 
+
+```{r, fig.width=10, fig.height=5}
+
+bcd.psn.dom %>% 
+  filter(일자 >= c19.tme.srt) %>% 
+  filter(코드 %in% c19.shk.reb.idx) %>% 
+  ggplot(aes(x = 일자, y = 금액, color = 업종)) + 
+  geom_point() + geom_line() + 
+  facet_wrap(~업종, nrow = 2, scales = "free_y") + 
+  theme_bw() + theme(legend.position = "none")
+
+```
+
+# 업종별 매출증감율 
+
+```{r, include=FALSE}
+
+bcd.psn.dom.chg <- 
+  bcd.psn.dom %>% 
+  select(-회원, -국내) %>% 
+  arrange(코드, 업종, 일자) %>% 
+  mutate(
+    전월     = lag(금액, n = 1),
+    전월대비 = 금액/전월 - 1,
+    전년     = lag(금액, n = 12),
+    전년대비 = 금액/전년 - 1
+  ) %>% 
+  drop_na(전년대비) %>% 
+  select(-전월, -전년); bcd.psn.dom.chg
+
+```
+
+## 저회복 업종
+
+### <> 전년대비
+
+```{r, fig.width=10, fig.height=5}
+
+bcd.psn.dom.chg %>% 
+  filter(일자 > ymd("20170101")) %>% 
+  filter(코드 %in% c19.shk.reb.idx) %>% 
+  ggplot(aes(x = 일자, y = 전년대비, color = 업종)) + 
+  geom_point() + geom_line() + 
+  geom_hline(yintercept = 0, color = "blue") +
+  facet_wrap(~업종, nrow = 2, scales = "free_y") + 
+  theme_bw() + theme(legend.position = "none")
+
+```
+
+### <> 전월대비
+
+```{r, fig.width=10, fig.height=5}
+
+bcd.psn.dom.chg %>% 
+  filter(일자 > ymd("20170101")) %>% 
+  filter(코드 %in% c19.shk.reb.idx) %>% 
+  ggplot(aes(x = 일자, y = 전월대비, color = 업종)) + 
+  geom_point() + geom_line() + 
+  geom_hline(yintercept = 0, color = "blue") +
+  facet_wrap(~업종, nrow = 2, scales = "free_y") + 
+  theme_bw() + theme(legend.position = "none")
+
+```
